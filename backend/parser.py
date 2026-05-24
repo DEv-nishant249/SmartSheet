@@ -1,28 +1,56 @@
 import re
+
+
 def parse_text(text):
-    rows = []
 
-    lines = text.strip().split("\n")
+    text = text.strip()
 
-    if not lines:
-        return rows
+    if not text:
+        return []
 
-    # First line = headers
-    headers = [h.strip() for h in lines[0].split(",")]
+    # clean spaces
+    text = text.replace("\t", " ")
+    text = re.sub(r"\s+", " ", text)
 
-    # Remaining lines = data
-    for line in lines[1:]:
+    # ---------------- FIND HEADER ----------------
+    first_id = re.search(r"\d{3,},", text)
 
-        if not line.strip():
-            continue
+    if not first_id:
+        return []
 
-        values = [v.strip() for v in line.split(",")]
+    split_index = first_id.start()
 
-        row = {}
+    header_text = text[:split_index].strip()
+    rows_text = text[split_index:].strip()
 
-        for i in range(min(len(headers), len(values))):
-            row[headers[i]] = values[i]
+    # headers
+    headers = [h.strip() for h in header_text.split(",")]
 
-        rows.append(row)
+    total_columns = len(headers)
 
-    return rows
+    parsed_data = []
+
+    # ADD HEADER ROW
+    parsed_data.append(headers)
+
+    # ---------------- SPLIT ROWS ----------------
+    row_pattern = r'(\d{3,},.*?)(?=\s\d{3,},|$)'
+
+    found_rows = re.findall(row_pattern, rows_text)
+
+    for row_text in found_rows:
+
+        row = [item.strip() for item in row_text.split(",")]
+
+        # FIX COLUMN SIZE
+        if len(row) < total_columns:
+            row += [""] * (total_columns - len(row))
+
+        if len(row) > total_columns:
+            row = row[:total_columns]
+
+        parsed_data.append(row)
+
+    print(parsed_data)
+
+    return parsed_data

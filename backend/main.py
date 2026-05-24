@@ -3,8 +3,8 @@ import uuid
 
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from fastapi.responses import FileResponse
 
 from parser import parse_text
 from excel_generator import create_excel
@@ -15,23 +15,39 @@ app = FastAPI()
 # ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","https://developernishantsmartsheet.netlify.app/"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://developernishantsmartsheet.netlify.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---------------- Folders ----------------
+# ---------------- FOLDERS ----------------
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("generated", exist_ok=True)
 
 
-# ---------------- Request Model ----------------
+# ---------------- REQUEST MODEL ----------------
 class TextInput(BaseModel):
     text: str
 
 
-# ---------------- Home ----------------
+# ---------------- CLEAN VOICE / OCR NOISE ----------------
+def clean_voice_stream(text: str):
+    words = text.split()
+
+    cleaned = []
+    for i, w in enumerate(words):
+        # remove repeated words like "in in name name"
+        if i == 0 or w.lower() != words[i - 1].lower():
+            cleaned.append(w)
+
+    return " ".join(cleaned)
+
+
+# ---------------- HOME ----------------
 @app.get("/")
 def home():
     return {"message": "SmartSheet Lite Backend Running"}
@@ -40,53 +56,74 @@ def home():
 # ---------------- TEXT TO EXCEL ----------------
 @app.post("/text-to-excel")
 def text_to_excel(data: TextInput):
-    parsed = parse_text(data.text)
+    try:
+        text = clean_voice_stream(data.text.strip())
 
-    filename = f"{uuid.uuid4()}.xlsx"
-    filepath = f"generated/{filename}"
+        if not text:
+            return {"error": "Empty input"}
 
-    create_excel(parsed, filepath)
+        parsed = parse_text(text)
 
-    return {
-        "filename": filename
-    }
+        if not parsed:
+            parsed = [["text"], [text]]
+
+        filename = f"{uuid.uuid4()}.xlsx"
+        create_excel(parsed, filename)
+
+        return {
+            "filename": filename,
+            "cleaned_text": text
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # ---------------- IMAGE TO EXCEL (OCR) ----------------
 @app.post("/image-to-excel")
 async def image_to_excel(file: UploadFile = File(...)):
+    image_path = None
+
     try:
-        image_path = f"uploads/{file.filename}"
+        image_path = f"uploads/{uuid.uuid4()}_{file.filename}"
 
-        with open(image_path, "wb") as buffer:
-            buffer.write(await file.read())
+        with open(image_path, "wb") as f:
+            f.write(await file.read())
 
-        # OCR step
         extracted_text = extract_text_from_image(image_path)
 
         if not extracted_text:
             return {"error": "No text extracted"}
 
-        parsed = parse_text(extracted_text)
+        cleaned_text = clean_voice_stream(extracted_text)
+
+        parsed = parse_text(cleaned_text)
+
+        if not parsed:
+            parsed = [["ocr_text"], [cleaned_text]]
 
         filename = f"{uuid.uuid4()}.xlsx"
-        filepath = f"generated/{filename}"
+        create_excel(parsed, filename)
 
-        create_excel(parsed, filepath)
+        
 
         return {
             "filename": filename,
-            "ocr_text": extracted_text
+            "ocr_text": cleaned_text
         }
 
     except Exception as e:
-        return {
-            "error": str(e)
-        }
+        return {"error": f"OCR failed: {str(e)}"}
+
+    finally:
+        if image_path and os.path.exists(image_path):
+            os.remove(image_path)
+
+
 # ---------------- DOWNLOAD + AUTO DELETE ----------------
 @app.get("/download/{filename}")
 def download_file(filename: str, background_tasks: BackgroundTasks):
-    path = f"generated/{filename}"
+    path = os.path.join("generated", filename)
 
     def delete_file():
         if os.path.exists(path):

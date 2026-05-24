@@ -1,19 +1,11 @@
 import easyocr
 
-reader = None
+reader = easyocr.Reader(['en'], gpu=False)
 
-def get_reader():
-    global reader
-    if reader is None:
-        reader = easyocr.Reader(['en'])
-    return reader
-
-def extract_text_from_image(image_path):
+def extract_text_from_image(image_path: str):
     results = reader.readtext(image_path)
 
-    extracted = []
+    if not results:
+        return ""
 
-    for result in results:
-        extracted.append(result[1])
-
-    return "\n".join(extracted)
+    return "\n".join([r[1] for r in results])
