@@ -16,7 +16,7 @@ function App() {
   const [ocrText, setOcrText] = useState("");
   const [recording, setRecording] = useState(false);
 
-  const backend = "http://127.0.0.1:8000";
+  const backend = "https://backend-xfja.onrender.com/";
 
   const generateFromText = async () => {
     try {
